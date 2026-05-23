@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Personalized Trip Planner | Recommendations</title>
+  <link rel="stylesheet" href="../css/style.css">
+  <script src="../js/data.js"></script>
+  <script src="../js/storage.js"></script>
+  <script src="../js/main.js" defer></script>
+  <script src="../js/recommendations.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="container header-content">
+      <a class="site-logo" href="../index.html">Personalized Trip Planner</a>
+      <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="primary-nav">
+        Menu
+      </button>
+      <nav class="site-nav" id="primary-nav" aria-label="Main navigation">
+        <ul>
+          <li><a href="../index.html">Home</a></li>
+          <li><a href="preferences.html">Plan a Trip</a></li>
+          <li><a href="recommendations.html">Recommendations</a></li>
+          <li><a href="my-trips.html">My Trips</a></li>
+          <li><a href="login.html">Login</a></li>
+          <li><a class="nav-cta" href="signup.html">Sign Up</a></li>
+        </ul>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <section class="section travel-hero recommendations-hero">
+      <div class="container travel-hero-content">
+        <p class="section-label">Matching trips</p>
+        <h1>Recommendations</h1>
+        <p class="lead-text">Explore trip packages matched to the preferences you selected in Plan a Trip.</p>
+      </div>
+    </section>
+
+    <section class="section compact-section">
+      <div class="container">
+        <div class="results-toolbar">
+          <div class="results-status" id="results-status" aria-live="polite">
+            Loading your personalized trip packages...
+          </div>
+          <a class="btn btn-secondary" href="preferences.html">Update Preferences</a>
+        </div>
+      </div>
+
+      <div class="container recommendations-layout">
+        <section class="recommendations-area" aria-label="Recommendations grid">
+          <div class="recommendations-grid" id="recommendations-grid" aria-label="Trip recommendation cards"></div>
+        </section>
+      </div>
+    </section>
+  </main>
+
+  <div class="modal-backdrop" id="save-modal" hidden>
+    <div class="save-modal" role="dialog" aria-modal="true" aria-labelledby="save-modal-title">
+      <h2 id="save-modal-title">Save this trip</h2>
+      <p>Want to save this trip? Create an account or log in to keep it in My Trips.</p>
+      <div class="modal-actions">
+        <a class="btn btn-primary" href="login.html">Log In</a>
+        <a class="btn btn-secondary" href="signup.html">Sign Up</a>
+        <button class="btn btn-secondary" id="close-save-modal" type="button">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <footer class="site-footer">
+    <div class="container footer-grid">
+      <div>
+        <h2>Personalized Trip Planner</h2>
+        <p>Plan friendly, personalized travel experiences from your preferences.</p>
+      </div>
+      <address class="footer-contact">
+        <p>Email: <a href="mailto:aviramya@post.bgu.ac.il">aviramya@post.bgu.ac.il</a></p>
+        <p>Phone: <a href="tel:0507877748">0507877748</a></p>
+      </address>
+    </div>
+  </footer>
+</body>
+</html>
