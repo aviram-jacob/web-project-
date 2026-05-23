@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Personalized Trip Planner | Preferences</title>
+  <link rel="stylesheet" href="../css/style.css">
+  <script src="../js/storage.js"></script>
+  <script src="../js/main.js" defer></script>
+  <script src="../js/validation.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="container header-content">
+      <a class="site-logo" href="../index.html">Personalized Trip Planner</a>
+      <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="primary-nav">
+        Menu
+      </button>
+      <nav class="site-nav" id="primary-nav" aria-label="Main navigation">
+        <ul>
+          <li><a href="../index.html">Home</a></li>
+          <li><a href="preferences.html">Plan a Trip</a></li>
+          <li><a href="recommendations.html">Recommendations</a></li>
+          <li><a href="my-trips.html">My Trips</a></li>
+          <li><a href="login.html">Login</a></li>
+          <li><a class="nav-cta" href="signup.html">Sign Up</a></li>
+        </ul>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <section class="section travel-hero preferences-hero">
+      <div class="container travel-hero-content">
+        <p class="section-label">Design your trip</p>
+        <h1>Build a trip around your preferences</h1>
+        <p class="lead-text">Choose the style, budget, duration, travelers, and interests that describe the trip you want.</p>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="container two-column-layout">
+        <div class="page-intro">
+          <p class="section-label">Design your trip</p>
+          <h1>Plan a Trip</h1>
+          <p class="lead-text">This is where you describe the trip you want. The form checks your inputs, saves your preferences for the current session, and uses them to generate matching recommendations.</p>
+          <div class="info-card">
+            <h2>What happens next?</h2>
+            <p>After you submit the form, the app compares your preferences with available trip packages and shows the best matching recommendations.</p>
+          </div>
+        </div>
+
+        <form class="form planner-form" id="preferences-form" action="#" method="get" novalidate>
+          <div class="form-group">
+            <label for="trip-type">Trip type *</label>
+            <select id="trip-type" name="tripType" aria-describedby="trip-type-error">
+              <option value="">Select a trip type</option>
+              <option value="Romantic">Romantic</option>
+              <option value="Family">Family</option>
+              <option value="Adventure">Adventure</option>
+              <option value="Urban">Urban</option>
+            </select>
+            <p class="field-error" id="trip-type-error" aria-live="polite"></p>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label for="budget">Budget ($) *</label>
+              <input type="number" id="budget" name="budget" min="1" placeholder="Example: 1500" aria-describedby="budget-error">
+              <p class="field-error" id="budget-error" aria-live="polite"></p>
+            </div>
+
+            <div class="form-group">
+              <label for="duration-days">Duration in days *</label>
+              <input type="number" id="duration-days" name="durationDays" min="1" placeholder="Example: 7" aria-describedby="duration-days-error">
+              <p class="field-error" id="duration-days-error" aria-live="polite"></p>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="travelers">Number of travelers *</label>
+            <input type="number" id="travelers" name="travelers" min="1" placeholder="Example: 2" aria-describedby="travelers-error">
+            <p class="field-error" id="travelers-error" aria-live="polite"></p>
+          </div>
+
+          <fieldset class="form-group" id="interests-fieldset">
+            <legend>Interests</legend>
+            <div class="checkbox-grid">
+              <label class="checkbox-label">
+                <input type="checkbox" name="interests" value="Cuisine">
+                Cuisine
+              </label>
+              <label class="checkbox-label">
+                <input type="checkbox" name="interests" value="Nature">
+                Nature
+              </label>
+              <label class="checkbox-label">
+                <input type="checkbox" name="interests" value="History">
+                History
+              </label>
+              <label class="checkbox-label">
+                <input type="checkbox" name="interests" value="Nightlife">
+                Nightlife
+              </label>
+              <label class="checkbox-label">
+                <input type="checkbox" name="interests" value="Relaxation">
+                Relaxation
+              </label>
+              <label class="checkbox-label">
+                <input type="checkbox" name="interests" value="Shopping">
+                Shopping
+              </label>
+              <label class="checkbox-label">
+                <input type="checkbox" name="interests" value="Attractions">
+                Attractions
+              </label>
+              <label class="checkbox-label">
+                <input type="checkbox" name="interests" value="Extreme sports">
+                Extreme sports
+              </label>
+            </div>
+          </fieldset>
+
+          <div class="form-group">
+            <label class="checkbox-label featured-checkbox">
+              <input type="checkbox" id="kosher-friendly" name="kosherFriendly">
+              Kosher-friendly options
+            </label>
+          </div>
+
+          <div class="form-message" id="preferences-form-message" aria-live="polite"></div>
+          <button class="btn btn-primary full-width" type="submit">Generate Recommendations</button>
+        </form>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container footer-grid">
+      <div>
+        <h2>Personalized Trip Planner</h2>
+        <p>Plan friendly, personalized travel experiences from your preferences.</p>
+      </div>
+      <address class="footer-contact">
+        <p>Email: <a href="mailto:aviramya@post.bgu.ac.il">aviramya@post.bgu.ac.il</a></p>
+        <p>Phone: <a href="tel:0507877748">0507877748</a></p>
+      </address>
+    </div>
+  </footer>
+</body>
+</html>
