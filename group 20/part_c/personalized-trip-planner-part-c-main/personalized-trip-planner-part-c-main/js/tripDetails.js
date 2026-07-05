@@ -1,0 +1,943 @@
+document.addEventListener("DOMContentLoaded", async function () {
+  initializeSaveModal();
+  const tripId = getTripIdFromUrl();
+
+  if (!tripId) {
+    showTripNotFound();
+    return;
+  }
+
+  try {
+    const serverTrip = await fetchTripDetailsFromServer(tripId);
+    const trip = convertServerTripDetailsToFrontendTrip(serverTrip);
+    renderTripDetails(trip);
+  } catch (error) {
+    console.error("Could not load trip details:", error.message);
+    showTripNotFound();
+  }
+});
+
+// Reads the trip id from the page URL query string.
+// Expects a URL like trip-details.html?id=trip-paris-romantic.
+// Returns the id string or null when no id is provided.
+function getTripIdFromUrl() {
+  const params = new URLSearchParams(window.location.search);
+  return params.get("id");
+}
+
+// Fetches one trip package from the Express API.
+// Expects a trip id or slug from the URL.
+// Returns the server trip object or throws when the request fails.
+async function fetchTripDetailsFromServer(tripId) {
+  const response = await fetch("/api/trips/" + encodeURIComponent(tripId));
+  const data = await response.json().catch(function () {
+    return {};
+  });
+
+  if (!response.ok || data.success === false || !data.trip) {
+    throw new Error(data.message || "Trip details request failed");
+  }
+
+  return data.trip;
+}
+
+// Converts SQL Server trip fields into the frontend trip shape.
+// Expects the trip object returned by GET /api/trips/:id.
+// Returns the object format used by the existing Trip Details UI.
+function convertServerTripDetailsToFrontendTrip(serverTrip) {
+  const interests = Array.isArray(serverTrip.interests) ? serverTrip.interests : [];
+
+  return {
+    id: String(serverTrip.trip_id),
+    slug: serverTrip.slug || "",
+    title: serverTrip.title || "",
+    city: serverTrip.city || "",
+    country: serverTrip.country || "",
+    tripType: serverTrip.trip_type || "",
+    estimatedPrice: Number(serverTrip.estimated_price) || 0,
+    durationDays: Number(serverTrip.duration_days) || 0,
+    recommendedGroupSize: Number(serverTrip.recommended_group_size) || 0,
+    kosherFriendly: Boolean(serverTrip.kosher_friendly),
+    shortDescription: serverTrip.short_description || "",
+    image: normalizeServerImagePath(serverTrip.image_path, serverTrip.slug, serverTrip.title, serverTrip.city),
+    tags: Array.isArray(serverTrip.tags) ? serverTrip.tags : interests,
+    interests: interests,
+    itinerary: normalizeServerItinerary(serverTrip.itinerary),
+    reviews: normalizeServerReviews(serverTrip.reviews),
+    averageRating: Number(serverTrip.average_rating) || null,
+    reviewCount: Number(serverTrip.review_count) || 0
+  };
+}
+
+// Converts database image paths into Express static asset paths.
+// Expects a database image path plus optional trip slug/title.
+// Returns a root-absolute static URL that matches local trip image names.
+function normalizeServerImagePath(imagePath, slug, title, city) {
+  const cleanPath = String(imagePath || "").trim().replace(/^\/+/, "");
+  const destinationImage = getDestinationImagePath(cleanPath, slug, title, city);
+  const localTripImage = getLocalTripImagePath(cleanPath, slug, title, city);
+  const imageSlug = slug || createImageSlug(title);
+  const fallbackImage = "/assets/images/backgrounds/details-hero.jpg";
+
+  if (destinationImage) {
+    return destinationImage;
+  }
+
+  if (localTripImage) {
+    return localTripImage;
+  }
+
+  if (cleanPath.startsWith("assets/")) {
+    if (cleanPath.startsWith("assets/images/trips/") && imageSlug && !cleanPath.endsWith("/" + imageSlug + ".jpg")) {
+      return "/assets/images/trips/" + imageSlug + ".jpg";
+    }
+
+    return "/" + cleanPath;
+  }
+
+  if (cleanPath.startsWith("images/trips/") && imageSlug) {
+    return "/assets/images/trips/" + imageSlug + ".jpg";
+  }
+
+  if (cleanPath.startsWith("images/")) {
+    return "/assets/" + cleanPath;
+  }
+
+  if (imageSlug) {
+    return "/assets/images/trips/" + imageSlug + ".jpg";
+  }
+
+  return cleanPath ? "/assets/images/trips/" + cleanPath : fallbackImage;
+}
+
+// Maps database-only destination trips to real local image files.
+// Expects image path and optional trip identity fields.
+// Returns a root-absolute image path or an empty string.
+function getDestinationImagePath(imagePath, slug, title, city) {
+  const destinationImages = {
+    vienna: "vienna.jpg",
+    berlin: "berlin.jpg",
+    budapest: "budapest.jpg",
+    zurich: "zurich.jpg",
+    interlaken: "interlaken.jpg",
+    miami: "miami.jpg",
+    istanbul: "istanbul.jpg"
+  };
+  const candidates = [
+    createImageSlug(city),
+    createImageSlug(title),
+    createImageSlug(slug),
+    createImageSlug(getFileNameWithoutExtension(imagePath))
+  ].filter(Boolean);
+  const destinationKey = Object.keys(destinationImages).find(function (destination) {
+    return candidates.some(function (candidate) {
+      return candidate === destination || candidate.includes(destination);
+    });
+  });
+
+  return destinationKey ? "/assets/images/trips/" + destinationImages[destinationKey] : "";
+}
+
+// Finds a matching local trip image from data.js when database filenames differ.
+// Expects the database image path and optional trip identity fields.
+// Returns a root-absolute image path or an empty string.
+function getLocalTripImagePath(imagePath, slug, title, city) {
+  if (!Array.isArray(window.tripPackages)) {
+    return "";
+  }
+
+  const candidates = [
+    createImageSlug(slug),
+    createImageSlug(title),
+    createImageSlug(city),
+    createImageSlug(getFileNameWithoutExtension(imagePath))
+  ].filter(Boolean);
+
+  const localTrip = window.tripPackages.find(function (trip) {
+    const localValues = [
+      createImageSlug(trip.id),
+      createImageSlug(trip.title),
+      createImageSlug(trip.city),
+      createImageSlug(getFileNameWithoutExtension(trip.image))
+    ];
+
+    return candidates.some(function (candidate) {
+      return localValues.includes(candidate);
+    });
+  });
+
+  return localTrip && localTrip.image ? normalizeLocalAssetPath(localTrip.image) : "";
+}
+
+// Converts a local data.js image path into an Express static URL.
+// Expects paths such as ../assets/images/trips/paris-romantic-escape.jpg.
+// Returns /assets/images/trips/paris-romantic-escape.jpg.
+function normalizeLocalAssetPath(imagePath) {
+  const cleanPath = String(imagePath || "").trim().replace(/^(\.\.\/)+/, "").replace(/^\/+/, "");
+
+  if (cleanPath.startsWith("assets/")) {
+    return "/" + cleanPath;
+  }
+
+  if (cleanPath.startsWith("images/")) {
+    return "/assets/" + cleanPath;
+  }
+
+  return cleanPath ? "/assets/images/trips/" + cleanPath : "";
+}
+
+// Reads the filename stem from an image path.
+// Expects any path-like string.
+// Returns the filename without its extension.
+function getFileNameWithoutExtension(imagePath) {
+  const fileName = String(imagePath || "").split("/").pop() || "";
+  return fileName.replace(/\.[^.]+$/, "");
+}
+
+// Creates a simple image slug from a trip title when the database slug is missing.
+// Expects a trip title string.
+// Returns a kebab-case filename stem.
+function createImageSlug(title) {
+  return String(title || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+// Normalizes server itinerary records for display.
+// Expects an optional itinerary array.
+// Returns day objects with day, title, and description fields.
+function normalizeServerItinerary(itinerary) {
+  if (!Array.isArray(itinerary)) {
+    return [];
+  }
+
+  return itinerary.map(function (item) {
+    return {
+      day: item.day || item.day_number || "",
+      title: item.title || "",
+      description: item.description || ""
+    };
+  });
+}
+
+// Normalizes server review records for display and rating math.
+// Expects an optional reviews array from the API.
+// Returns review objects compatible with storage.js helpers.
+function normalizeServerReviews(reviews) {
+  if (!Array.isArray(reviews)) {
+    return [];
+  }
+
+  return reviews.map(function (review) {
+    return {
+      source: "server",
+      reviewId: review.review_id,
+      user: review.user || "Traveler",
+      rating: Number(review.rating),
+      text: review.text || review.comment || "",
+      createdAt: review.created_at || ""
+    };
+  });
+}
+
+// Formats visible trip prices in dollars.
+// Expects a numeric price value.
+// Returns a dollar-formatted string such as $1,500.
+function formatPrice(price) {
+  return "$" + price.toLocaleString();
+}
+
+// Escapes user-entered review text before adding it to generated markup.
+// Expects any value that will be displayed as text.
+// Returns an HTML-safe string.
+function escapeHtml(value) {
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+// Renders all visible trip details for the selected package.
+// Expects a trip object in the frontend details format.
+// Updates the hero, metadata, itinerary, tags, interests, and reviews.
+function renderTripDetails(trip) {
+  const reviews = getCombinedTripReviews(trip);
+  const ratingSummary = calculateRatingSummary(reviews);
+  const imageUrl = resolveTripImagePath(trip);
+
+  document.title = trip.title + " | Personalized Trip Planner";
+  renderHero(trip, ratingSummary, imageUrl);
+
+  const content = document.getElementById("trip-details-content");
+
+  if (!content) {
+    return;
+  }
+
+  content.innerHTML =
+    '<div class="trip-details-layout">' +
+      '<div class="trip-main">' +
+        '<section class="detail-section trip-overview-section">' +
+          '<img class="trip-detail-image" src="' + imageUrl + '" alt="' + trip.title + ' in ' + trip.city + ', ' + trip.country + '" onerror="this.onerror=null;this.src=\'/assets/images/backgrounds/details-hero.jpg\';">' +
+          '<div class="trip-detail-actions">' +
+            '<button class="btn btn-primary" id="save-trip-button" type="button">♡ Save Trip</button>' +
+            '<a class="btn btn-secondary" href="/pages/preferences.html">Back to Plan a Trip</a>' +
+          '</div>' +
+          '<p class="save-feedback" id="trip-save-feedback" aria-live="polite"></p>' +
+        '</section>' +
+        '<section class="detail-section">' +
+          '<h2>Gallery</h2>' +
+          '<div class="visual-gallery">' + renderGallery(trip, imageUrl) + '</div>' +
+        '</section>' +
+        '<section class="detail-section">' +
+          '<h2>Itinerary</h2>' +
+          '<div class="trip-itinerary-list">' + renderItinerary(trip.itinerary) + '</div>' +
+        '</section>' +
+        '<section class="detail-section">' +
+          '<h2>Trip Highlights</h2>' +
+          '<h3>Tags</h3>' +
+          '<div class="tag-list">' + renderBadgeList(getTripTags(trip)) + '</div>' +
+          '<h3>Interests</h3>' +
+          '<div class="tag-list">' + renderBadgeList(trip.interests) + '</div>' +
+        '</section>' +
+        '<section class="detail-section">' +
+          '<h2>Traveler Reviews</h2>' +
+          '<div class="review-list" id="review-list">' + renderReviews(reviews) + '</div>' +
+        '</section>' +
+        '<section class="detail-section">' +
+          '<h2>Leave a Review</h2>' +
+          '<p>Share a short note about this trip.</p>' +
+          '<div class="review-auth-actions" id="review-auth-actions" hidden>' +
+            '<p>Please log in or sign up to leave a review.</p>' +
+            '<div class="modal-actions">' +
+              '<a class="btn btn-primary" href="/pages/login.html">Log In</a>' +
+              '<a class="btn btn-secondary" href="/pages/signup.html">Sign Up</a>' +
+            '</div>' +
+          '</div>' +
+          '<form class="review-form" id="review-form" action="#" method="post" novalidate>' +
+            '<div class="form-group">' +
+              '<label for="review-rating">Rating</label>' +
+              '<select id="review-rating" name="reviewRating" aria-describedby="review-rating-error">' +
+                '<option value="">Select a rating</option>' +
+                '<option value="5">5</option>' +
+                '<option value="4">4</option>' +
+                '<option value="3">3</option>' +
+                '<option value="2">2</option>' +
+                '<option value="1">1</option>' +
+              '</select>' +
+              '<p class="field-error" id="review-rating-error" aria-live="polite"></p>' +
+            '</div>' +
+            '<div class="form-group">' +
+              '<label for="review-text">Review text</label>' +
+              '<textarea id="review-text" name="reviewText" rows="5" placeholder="Share a short note about this trip" aria-describedby="review-text-error"></textarea>' +
+              '<p class="field-error" id="review-text-error" aria-live="polite"></p>' +
+            '</div>' +
+            '<p class="save-feedback" id="review-form-feedback" aria-live="polite"></p>' +
+            '<button class="btn btn-secondary" type="submit">Submit Review</button>' +
+          '</form>' +
+        '</section>' +
+      '</div>' +
+      '<aside class="info-sidebar trip-info-sidebar">' +
+        '<h2>Essential Info</h2>' +
+        '<dl class="trip-detail-meta">' +
+          '<div><dt>Trip type</dt><dd>' + trip.tripType + '</dd></div>' +
+          '<div><dt>Estimated price</dt><dd>' + formatPrice(trip.estimatedPrice) + '</dd></div>' +
+          '<div><dt>Duration</dt><dd>' + trip.durationDays + ' days</dd></div>' +
+          '<div><dt>Group size</dt><dd>' + trip.recommendedGroupSize + '</dd></div>' +
+          '<div><dt>Rating</dt><dd id="trip-rating-summary">' + renderRatingSummary(ratingSummary) + '</dd></div>' +
+        '</dl>' +
+        (trip.kosherFriendly ? '<span class="tag kosher-detail-tag">Kosher-friendly</span>' : '') +
+      '</aside>' +
+    '</div>';
+
+  const saveButton = document.getElementById("save-trip-button");
+
+  if (saveButton) {
+    saveButton.innerHTML = "&#9825; Save Trip";
+
+    saveButton.addEventListener("click", function () {
+      handleTripDetailsSave(trip.id, saveButton);
+    });
+  }
+
+  initializeReviewForm(trip);
+}
+
+// Gets the shared trip image URL for hero, main image, and gallery.
+// Expects a trip object with a resolved image field.
+// Returns a usable image URL or the details fallback image.
+function resolveTripImagePath(trip) {
+  return trip && trip.image ? trip.image : "/assets/images/backgrounds/details-hero.jpg";
+}
+
+// Renders the top hero text for the selected trip.
+// Expects a trip object, calculated rating summary, and resolved image URL.
+// Updates the existing hero content container.
+function renderHero(trip, ratingSummary, imageUrl) {
+  const hero = document.getElementById("trip-hero-content");
+  const heroSection = document.querySelector(".trip-detail-hero");
+
+  if (!hero) {
+    return;
+  }
+
+  if (heroSection) {
+    heroSection.style.backgroundImage =
+      "linear-gradient(90deg, rgba(19, 35, 48, 0.72), rgba(31, 41, 51, 0.34), rgba(31, 41, 51, 0.12)), url(" + JSON.stringify(imageUrl) + ")";
+  }
+
+  hero.innerHTML =
+    '<p class="section-label">' + trip.tripType + ' trip package</p>' +
+    '<h1>' + trip.title + '</h1>' +
+    '<p class="trip-hero-location">' + trip.city + ', ' + trip.country + '</p>' +
+    '<p class="lead-text">' + trip.shortDescription + '</p>' +
+    '<div class="trip-hero-meta">' +
+      '<span>' + formatPrice(trip.estimatedPrice) + '</span>' +
+      '<span>' + trip.durationDays + ' days</span>' +
+      '<span>' + trip.recommendedGroupSize + '</span>' +
+      '<span id="trip-hero-rating-summary">' + renderRatingSummary(ratingSummary) + '</span>' +
+      (trip.kosherFriendly ? '<span>Kosher-friendly</span>' : '') +
+    '</div>';
+}
+
+// Renders itinerary day cards.
+// Expects an array of itinerary day objects.
+// Returns HTML markup for the itinerary list.
+function renderItinerary(itinerary) {
+  const safeItinerary = Array.isArray(itinerary) ? itinerary : [];
+
+  if (safeItinerary.length === 0) {
+    return '<p class="muted-text">No itinerary days available yet.</p>';
+  }
+
+  return safeItinerary.map(function (item) {
+    return '<article class="itinerary-card">' +
+      '<span>Day ' + item.day + '</span>' +
+      '<h3>' + item.title + '</h3>' +
+      '<p>' + item.description + '</p>' +
+    '</article>';
+  }).join("");
+}
+
+// Renders the visual gallery for the selected trip.
+// Expects a trip object with a gallery array, or falls back to the main image.
+// Returns responsive image-card markup.
+function renderGallery(trip, imageUrl) {
+  const gallery = getTripGallery(trip, imageUrl);
+
+  return gallery.map(function (image) {
+    return '<figure class="gallery-item">' +
+      '<img src="' + image.src + '" alt="' + escapeHtml(image.alt) + '" onerror="this.onerror=null;this.src=\'/assets/images/backgrounds/details-hero.jpg\';">' +
+    '</figure>';
+  }).join("");
+}
+
+// Gets a safe gallery array for a trip details page.
+// Expects a trip object and resolved image URL.
+// Returns at least the main trip image when gallery data is missing.
+function getTripGallery(trip, imageUrl) {
+  if (trip && Array.isArray(trip.gallery) && trip.gallery.length > 0) {
+    return trip.gallery;
+  }
+
+  return [
+    {
+      src: imageUrl || "/assets/images/backgrounds/details-hero.jpg",
+      alt: trip ? trip.title + " in " + trip.city + ", " + trip.country : "Trip image"
+    }
+  ];
+}
+
+// Gets server reviews first, with localStorage fallback for old frontend data.
+// Expects a trip object with an id and optional static reviews.
+// Returns normalized review objects used by rendering and rating calculations.
+function getCombinedTripReviews(trip) {
+  if (trip && Array.isArray(trip.reviews)) {
+    return trip.reviews;
+  }
+
+  return window.appStorage && window.appStorage.getAllReviewsForTrip
+    ? window.appStorage.getAllReviewsForTrip(trip)
+    : [];
+}
+
+// Calculates the real average rating from review data.
+// Expects normalized reviews and counts only numeric ratings.
+function calculateRatingSummary(reviews) {
+  return window.appStorage && window.appStorage.calculateRatingSummary
+    ? window.appStorage.calculateRatingSummary(reviews)
+    : { average: null, count: 0 };
+}
+
+// Renders the visible rating summary from real review counts.
+// Expects the output of calculateRatingSummary.
+function renderRatingSummary(summary) {
+  return window.appStorage && window.appStorage.formatRatingSummary
+    ? window.appStorage.formatRatingSummary(summary)
+    : "Not rated yet";
+}
+
+// Renders traveler review cards.
+// Expects normalized review objects from the server.
+// Returns HTML markup for all reviews.
+function renderReviews(reviews) {
+  if (!Array.isArray(reviews) || reviews.length === 0) {
+    return '<p class="muted-text">No reviews yet.</p>';
+  }
+
+  return reviews.map(function (review) {
+    return '<article class="review-card">' +
+      '<div class="review-card-header">' +
+        '<h3>' + escapeHtml(getReviewDisplayName(review)) + '</h3>' +
+        '<span>' + Number(review.rating).toFixed(1) + ' / 5</span>' +
+      '</div>' +
+      '<p>' + escapeHtml(review.text) + '</p>' +
+    '</article>';
+  }).join("");
+}
+
+// Chooses a friendly display name for static and local reviews.
+// Expects a normalized review object.
+// Avoids showing personal email addresses in the UI.
+function getReviewDisplayName(review) {
+  if (review.source !== "local") {
+    return review.user || "Traveler";
+  }
+
+  const currentUserEmail = getCurrentUserEmail();
+
+  if (currentUserEmail && normalizeEmail(review.userEmail) === currentUserEmail) {
+    return "You";
+  }
+
+  return "Traveler";
+}
+
+// Wires review submission for the current trip.
+// Expects the selected trip object so database reviews can be updated.
+function initializeReviewForm(trip) {
+  const reviewForm = document.getElementById("review-form");
+
+  if (!reviewForm) {
+    return;
+  }
+
+  updateReviewFormAvailability(trip);
+
+  reviewForm.addEventListener("submit", function (event) {
+    handleReviewSubmit(event, trip);
+  });
+}
+
+// Updates the review form for guests and logged-in users.
+// Expects the current trip object.
+function updateReviewFormAvailability(trip) {
+  const authActions = document.getElementById("review-auth-actions");
+  const submitButton = document.querySelector("#review-form button[type='submit']");
+  const currentUser = getCurrentUserForReview();
+
+  if (authActions) {
+    authActions.hidden = Boolean(currentUser);
+  }
+
+  if (!currentUser) {
+    enableReviewForm();
+    showReviewFeedback("Please log in or sign up to leave a review.", "error");
+    return;
+  }
+
+  enableReviewForm();
+  showReviewFeedback("");
+
+  if (submitButton) {
+    submitButton.textContent = "Submit Review";
+  }
+}
+
+// Validates and saves a new review in the database.
+// Expects a submit event and the current trip object.
+// Re-fetches trip details after a successful submission.
+async function handleReviewSubmit(event, trip) {
+  event.preventDefault();
+
+  clearReviewFieldError("review-rating");
+  clearReviewFieldError("review-text");
+  showReviewFeedback("");
+
+  const currentUser = getCurrentUserForReview();
+
+  if (!currentUser) {
+    showReviewFeedback("Please log in or sign up to leave a review.", "error");
+    const authActions = document.getElementById("review-auth-actions");
+
+    if (authActions) {
+      authActions.hidden = false;
+    }
+
+    return;
+  }
+
+  const ratingField = document.getElementById("review-rating");
+  const textField = document.getElementById("review-text");
+  const rating = ratingField ? ratingField.value.trim() : "";
+  const reviewText = textField ? textField.value.trim() : "";
+  let isValid = true;
+
+  if (rating === "") {
+    showReviewFieldError("review-rating", "Rating is required.");
+    isValid = false;
+  }
+
+  if (reviewText === "") {
+    showReviewFieldError("review-text", "Review text is required.");
+    isValid = false;
+  }
+
+  if (!isValid) {
+    return;
+  }
+
+  try {
+    const response = await fetch("/api/trips/" + encodeURIComponent(trip.id) + "/reviews", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        userId: Number(currentUser.userId),
+        rating: Number(rating),
+        comment: reviewText
+      })
+    });
+    const data = await response.json().catch(function () {
+      return {};
+    });
+
+    if (!response.ok || data.success === false) {
+      showReviewFeedback(data.message || "Review could not be submitted. Please try again.", "error");
+      return;
+    }
+
+    event.target.reset();
+    const successMessage = data.message || "Review added successfully.";
+
+    showReviewFeedback(successMessage, "success");
+
+    try {
+      await refreshTripDetailsAfterReview(trip.id, successMessage);
+    } catch (refreshError) {
+      showReviewFeedback("Review added successfully. Refresh the page to see the latest reviews.", "success");
+    }
+  } catch (error) {
+    showReviewFeedback("Review could not be submitted. Please try again.", "error");
+  }
+}
+
+// Re-fetches and re-renders the trip details after a review is added.
+// Expects a trip id and the success message to keep visible.
+// Updates the reviews, rating summary, and review count from the database.
+async function refreshTripDetailsAfterReview(tripId, successMessage) {
+  const serverTrip = await fetchTripDetailsFromServer(tripId);
+  const updatedTrip = convertServerTripDetailsToFrontendTrip(serverTrip);
+
+  renderTripDetails(updatedTrip);
+  showReviewFeedback(successMessage || "Review added successfully.", "success");
+}
+
+// Gets the logged-in user for database review requests.
+// Expects appStorage current-user data.
+// Returns the current user object or null for guests.
+function getCurrentUserForReview() {
+  const currentUser = window.appStorage && window.appStorage.getCurrentUser
+    ? window.appStorage.getCurrentUser()
+    : getCurrentUserFromLocalStorage();
+
+  if (!currentUser || !currentUser.isLoggedIn || !Number.isInteger(Number(currentUser.userId))) {
+    return null;
+  }
+
+  return currentUser;
+}
+
+// Reads the current user directly if the storage helper is not available.
+// Expects localStorage.currentUser to contain project login state.
+// Returns the parsed user object or null.
+function getCurrentUserFromLocalStorage() {
+  try {
+    return JSON.parse(localStorage.getItem("currentUser"));
+  } catch (error) {
+    return null;
+  }
+}
+
+// Gets the logged-in user's email when available.
+// Expects appStorage current-user data.
+function getCurrentUserEmail() {
+  const currentUser = getCurrentUserForReview();
+  return normalizeEmail(currentUser && currentUser.email);
+}
+
+// Normalizes emails before duplicate checks.
+// Expects any email-like value.
+function normalizeEmail(email) {
+  return String(email || "").trim().toLowerCase();
+}
+
+// Enables review fields for users who can review.
+// Expects review form controls to exist on the page.
+function enableReviewForm() {
+  setReviewFormDisabled(false);
+}
+
+// Disables review fields after a user has reviewed the trip.
+// Expects review form controls to exist on the page.
+function disableReviewForm() {
+  setReviewFormDisabled(true);
+}
+
+// Toggles review form controls.
+// Expects a disabled boolean.
+function setReviewFormDisabled(disabled) {
+  const formControls = document.querySelectorAll("#review-rating, #review-text, #review-form button[type='submit']");
+
+  formControls.forEach(function (control) {
+    control.disabled = disabled;
+  });
+}
+
+// Shows an inline review-form field error.
+// Expects a field id and message.
+// Keeps review validation feedback beside the relevant input.
+function showReviewFieldError(fieldId, message) {
+  const field = document.getElementById(fieldId);
+  const errorElement = document.getElementById(fieldId + "-error");
+
+  if (field) {
+    field.classList.add("invalid-field");
+    field.setAttribute("aria-invalid", "true");
+  }
+
+  if (errorElement) {
+    errorElement.textContent = message;
+  }
+}
+
+// Clears one review-form field error.
+// Expects a field id.
+// Removes invalid styling and visible error text.
+function clearReviewFieldError(fieldId) {
+  const field = document.getElementById(fieldId);
+  const errorElement = document.getElementById(fieldId + "-error");
+
+  if (field) {
+    field.classList.remove("invalid-field");
+    field.removeAttribute("aria-invalid");
+  }
+
+  if (errorElement) {
+    errorElement.textContent = "";
+  }
+}
+
+// Shows review submission feedback.
+// Expects a short message or an empty string and an optional message type.
+// Uses success and error styles near the review form.
+function showReviewFeedback(message, type) {
+  const feedback = document.getElementById("review-form-feedback");
+
+  if (!feedback) {
+    return;
+  }
+
+  feedback.textContent = message;
+  feedback.className = "save-feedback";
+
+  if (message) {
+    feedback.classList.add("save-feedback--visible");
+    feedback.classList.add(type === "error" ? "save-feedback--error" : "save-feedback--success");
+  }
+}
+
+// Shows a friendly not-found state when the trip id is missing or invalid.
+// Expects no input.
+// Replaces the page content with a clear message and link back.
+function showTripNotFound() {
+  const hero = document.getElementById("trip-hero-content");
+  const content = document.getElementById("trip-details-content");
+
+  if (hero) {
+    hero.innerHTML =
+      '<p class="section-label">Trip package</p>' +
+      '<h1>Trip package not found.</h1>' +
+      '<p class="lead-text">Choose another trip from Plan a Trip.</p>';
+  }
+
+  if (content) {
+    content.innerHTML =
+      '<div class="empty-state large-empty-state">' +
+        '<h2>Trip package not found.</h2>' +
+        '<p>Choose another trip from Plan a Trip.</p>' +
+        '<a class="btn btn-primary" href="/pages/preferences.html">Back to Plan a Trip</a>' +
+      '</div>';
+  }
+}
+
+// Opens the save modal for guests.
+// Expects no input.
+// Shows login and signup actions without saving data.
+function openSaveModal() {
+  const modal = document.getElementById("save-modal");
+
+  if (modal) {
+    modal.hidden = false;
+  }
+}
+
+// Saves the current trip for logged-in users or opens the guest modal.
+// Expects the current trip id and Save Trip button.
+// Sends the save request to the Express API.
+async function handleTripDetailsSave(tripId, saveButton) {
+  const currentUser = getCurrentUserForSavedTrip();
+
+  if (!currentUser) {
+    openSaveModal();
+    return;
+  }
+
+  if (saveButton) {
+    saveButton.disabled = true;
+  }
+
+  try {
+    const response = await fetch("/api/saved-trips", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        userId: Number(currentUser.userId),
+        tripId: Number(tripId)
+      })
+    });
+    const data = await response.json();
+
+    if (!response.ok || data.success === false) {
+      if (saveButton) {
+        saveButton.disabled = false;
+      }
+
+      showTripSaveFeedback(data.message || "Trip could not be saved. Please try again.");
+      return;
+    }
+
+    setTripDetailsSavedState(saveButton, "♥ Saved to My Trips");
+    showTripSaveFeedback(data.message || "Trip saved to My Trips.");
+  } catch (error) {
+    if (saveButton) {
+      saveButton.disabled = false;
+    }
+
+    showTripSaveFeedback("Trip could not be saved. Please try again.");
+  }
+}
+
+// Gets the logged-in user for database saved-trip requests.
+// Expects appStorage current-user data with a real userId.
+// Returns the current user object or null for guests.
+function getCurrentUserForSavedTrip() {
+  if (!window.appStorage || !window.appStorage.isUserLoggedIn || !window.appStorage.isUserLoggedIn()) {
+    return null;
+  }
+
+  const currentUser = window.appStorage.getCurrentUser ? window.appStorage.getCurrentUser() : null;
+
+  if (!currentUser || !Number.isInteger(Number(currentUser.userId))) {
+    return null;
+  }
+
+  return currentUser;
+}
+
+// Updates the trip details save button after saving.
+// Expects the button element and display text.
+// Prevents duplicate save clicks on this page.
+function setTripDetailsSavedState(button, text) {
+  if (!button) {
+    return;
+  }
+
+  button.textContent = "\u2665 Saved to My Trips";
+  button.classList.add("saved-button");
+  button.disabled = true;
+}
+
+// Shows save feedback on the trip details page.
+// Expects a message string.
+// Writes visible feedback below the action area.
+function showTripSaveFeedback(message) {
+  const feedback = document.getElementById("trip-save-feedback");
+
+  if (feedback) {
+    feedback.textContent = message;
+    feedback.classList.add("save-feedback--visible");
+  }
+}
+
+// Closes the save modal.
+// Expects no input.
+// Hides the modal without saving data.
+function closeSaveModal() {
+  const modal = document.getElementById("save-modal");
+
+  if (modal) {
+    modal.hidden = true;
+  }
+}
+
+// Connects the save modal close button and backdrop behavior.
+// Expects the modal and close button to exist on the page.
+// Adds event listeners without saving any trip data.
+function initializeSaveModal() {
+  const modal = document.getElementById("save-modal");
+  const closeButton = document.getElementById("close-save-modal");
+
+  if (closeButton) {
+    closeButton.addEventListener("click", closeSaveModal);
+  }
+
+  if (modal) {
+    modal.addEventListener("click", function (event) {
+      if (event.target === modal) {
+        closeSaveModal();
+      }
+    });
+  }
+}
+
+// Builds the visible tag list for a trip.
+// Expects one trip object.
+// Returns regular tags plus Kosher-friendly when relevant.
+function getTripTags(trip) {
+  const tags = trip && Array.isArray(trip.tags) ? trip.tags : [];
+
+  return trip && trip.kosherFriendly ? tags.concat("Kosher-friendly") : tags;
+}
+
+// Converts a list of tag or interest names into badge markup.
+// Expects an array of strings.
+// Returns HTML for styled badge spans.
+function renderBadgeList(items) {
+  const safeItems = Array.isArray(items) ? items : [];
+
+  if (safeItems.length === 0) {
+    return '<span class="muted-text">No items available yet.</span>';
+  }
+
+  return safeItems.map(function (item) {
+    return '<span class="tag">' + escapeHtml(item) + '</span>';
+  }).join("");
+}
